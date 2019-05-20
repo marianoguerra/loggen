@@ -135,7 +135,7 @@ fn main() {
     let matches = App::new("loggen")
         .version("0.1.0")
         .author("Mariano Guerra <mariano@marianoguerra.org>")
-        .about("Generates log lines from a folder structure of samples")
+        .about("Generate logs from a directory tree of sample logs")
         .arg(
             Arg::with_name("in-base-dir")
                 .short("i")
