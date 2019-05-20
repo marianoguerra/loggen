@@ -1,0 +1,11 @@
+[package]
+name = "loggen"
+version = "0.1.0"
+authors = ["Mariano Guerra <mariano@marianoguerra.org>"]
+edition = "2018"
+
+[dependencies]
+clap = "2.33.0"
+libc = "0.2.53"
+walkdir = "2"
+num_cpus = "0.2"
