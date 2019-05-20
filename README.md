@@ -1,4 +1,4 @@
-# loggen: Generate logs from a sample directory tree of logs
+# loggen: Generate logs from a directory tree of sample logs
 
 loggen is a CLI tool that takes an input base directory, finds all files in it
 and reads each line of each file and writes it to the same path in an output
@@ -34,6 +34,8 @@ OPTIONS:
 
 There is a sample input directory in data, replace `in-dir-path` for `data` to
 try it with them.
+
+You can watch the results written in `out-dir-path` with `tail -F output-dir-path/*/*/*.log`
 
 ### Simple
 
