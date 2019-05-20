@@ -65,7 +65,7 @@ cargo run -- -i in-dir-path -o out-dir-path
 
 ### Release build
 
-Result is in target/release/loggen
+Binary is in `target/release/loggen`
 
 
 ```
