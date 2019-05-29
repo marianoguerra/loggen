@@ -3,10 +3,28 @@ use libc;
 use num_cpus;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, LineWriter, Seek, SeekFrom, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::thread::{self, sleep, JoinHandle};
 use std::time::Duration;
 use walkdir::WalkDir;
+
+#[derive(Debug, Clone)]
+pub enum WrapStrategy {
+    Truncate,
+    Append,
+    Rotate,
+}
+
+impl WrapStrategy {
+    pub fn from_str(v: &str, default: WrapStrategy) -> WrapStrategy {
+        match v {
+            "truncate" => WrapStrategy::Truncate,
+            "append" => WrapStrategy::Append,
+            "rotate" => WrapStrategy::Rotate,
+            _ => default,
+        }
+    }
+}
 
 pub fn is_positive_number(v: String) -> Result<(), String> {
     if v.parse::<u64>().is_ok() {
@@ -18,11 +36,56 @@ pub fn is_positive_number(v: String) -> Result<(), String> {
 
 #[derive(Debug)]
 struct GenInput {
+    path_in: PathBuf,
+    path_out: PathBuf,
     reader: BufReader<File>,
     writer: LineWriter<File>,
 }
 
 impl GenInput {
+    fn new(path_in: PathBuf, path_out: PathBuf) -> io::Result<GenInput> {
+        let read_file = File::open(&path_in)?;
+        let write_file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .append(true)
+            .open(&path_out)?;
+
+        let reader = BufReader::new(read_file);
+        let writer = LineWriter::new(write_file);
+        Ok(GenInput {
+            reader,
+            writer,
+            path_in: path_in,
+            path_out: path_out,
+        })
+    }
+
+    fn truncate(&mut self) -> io::Result<()> {
+        let write_file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&self.path_out)?;
+
+        self.writer = LineWriter::new(write_file);
+
+        Ok(())
+    }
+
+    fn rotate(&mut self) -> io::Result<()> {
+        std::fs::rename(&self.path_out, self.path_out.with_extension("rotated"))?;
+        let write_file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .append(true)
+            .open(&self.path_out)?;
+
+        self.writer = LineWriter::new(write_file);
+
+        Ok(())
+    }
+
     fn read(&mut self) -> io::Result<Option<String>> {
         let mut buf = String::new();
         match self.reader.read_line(&mut buf) {
@@ -37,7 +100,19 @@ impl GenInput {
         }
     }
 
-    fn rewind(&mut self) -> io::Result<()> {
+    fn wrap(&mut self, wrap_strategy: &WrapStrategy) -> io::Result<()> {
+        match wrap_strategy {
+            WrapStrategy::Truncate => {
+                self.truncate()?;
+            }
+            WrapStrategy::Append => {
+                // nothing to do here
+            }
+            WrapStrategy::Rotate => {
+                self.rotate()?;
+            }
+        }
+
         self.reader.seek(SeekFrom::Start(0)).map(|_| ())
     }
 
@@ -46,7 +121,7 @@ impl GenInput {
     }
 }
 
-fn generate(mut items: Vec<GenInput>, interval: Duration) {
+fn generate(mut items: Vec<GenInput>, interval: Duration, wrap_strategy: &WrapStrategy) {
     loop {
         for item in items.iter_mut() {
             match item.read() {
@@ -56,7 +131,7 @@ fn generate(mut items: Vec<GenInput>, interval: Duration) {
                         .ok();
                 }
                 Ok(None) => {
-                    item.rewind()
+                    item.wrap(wrap_strategy)
                         .map_err(|err| eprintln!("Error: {:?}", err))
                         .ok();
                 }
@@ -75,6 +150,7 @@ fn run(
     out_dir: &str,
     interval: Duration,
     parallelism_num: usize,
+    wrap_strategy: WrapStrategy,
 ) -> io::Result<Vec<JoinHandle<()>>> {
     let in_path = Path::new(in_dir);
     let out_path = Path::new(out_dir);
@@ -86,8 +162,8 @@ fn run(
     }
 
     println!(
-        "{} -> {} (threads: {}, interval: {:?})",
-        in_dir, out_dir, parallelism_num, interval
+        "{} -> {} (threads: {}, interval: {:?}, wrap: {:?})",
+        in_dir, out_dir, parallelism_num, interval, wrap_strategy
     );
 
     for entry in WalkDir::new(in_dir).into_iter().filter_map(|e| e.ok()) {
@@ -97,17 +173,8 @@ fn run(
                 let path_out = out_path.join(rel_dir);
                 let dir_to_create = path_out.parent().unwrap();
                 fs::create_dir_all(dir_to_create)?;
-                let read_file = File::open(path_in)?;
-                let write_file = OpenOptions::new()
-                    .write(true)
-                    .create(true)
-                    .append(true)
-                    .open(path_out)?;
-
                 let index: usize = counter % parallelism_num;
-                let reader = BufReader::new(read_file);
-                let writer = LineWriter::new(write_file);
-                let gen_input = GenInput { reader, writer };
+                let gen_input = GenInput::new(path_in.to_path_buf(), path_out)?;
                 workers_data[index].push(gen_input);
 
                 counter += 1;
@@ -118,8 +185,9 @@ fn run(
     let mut join_handles = vec![];
     for worker_data in workers_data.into_iter() {
         if worker_data.len() > 0 {
+            let my_wrap_strategy = wrap_strategy.clone();
             join_handles.push(thread::spawn(move || {
-                generate(worker_data, interval);
+                generate(worker_data, interval, &my_wrap_strategy);
             }));
         }
     }
@@ -165,6 +233,16 @@ fn main() {
                 .takes_value(true),
         )
         .arg(
+            Arg::with_name("wrap-strategy")
+                .short("w")
+                .long("wrap-strategy")
+                .value_name("STRATEGY")
+                .help("What to do when sample log reaches the end")
+                .default_value("append")
+                .possible_values(&["truncate", "append", "rotate"])
+                .required(true),
+        )
+        .arg(
             Arg::with_name("parallelism")
                 .short("p")
                 .long("parallelism")
@@ -178,6 +256,7 @@ fn main() {
 
     let in_dir = matches.value_of("in-base-dir").unwrap();
     let out_dir = matches.value_of("out-base-dir").unwrap();
+    let wrap_strategy = matches.value_of("wrap-strategy").unwrap();
     let interval_str = matches.value_of("interval").unwrap_or("0");
     let interval_num = interval_str.parse::<u64>().unwrap();
     let parallelism_str = matches.value_of("parallelism").unwrap_or("0");
@@ -193,6 +272,7 @@ fn main() {
         out_dir,
         Duration::from_millis(interval_num),
         parallelism_num,
+        WrapStrategy::from_str(wrap_strategy, WrapStrategy::Append),
     ) {
         Ok(join_handles) => {
             for join_handle in join_handles {
