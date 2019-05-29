@@ -201,7 +201,7 @@ fn main() {
     }
 
     let matches = App::new("loggen")
-        .version("0.1.0")
+        .version("0.2.0")
         .author("Mariano Guerra <mariano@marianoguerra.org>")
         .about("Generate logs from a directory tree of sample logs")
         .arg(

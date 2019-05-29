@@ -14,20 +14,21 @@ Stop with `Ctrl+C`
 
 ```
 loggen
-Generates log lines from a folder structure of samples
+Generate logs from a directory tree of sample logs
 
 USAGE:
-    loggen [OPTIONS] --in-base-dir <FILE> --out-base-dir <FILE>
+    loggen [OPTIONS] --in-base-dir <FILE> --out-base-dir <FILE> --wrap-strategy <STRATEGY>
 
 FLAGS:
     -h, --help       Prints help information
     -V, --version    Prints version information
 
 OPTIONS:
-    -i, --in-base-dir <FILE>     Input base directory
-    -t, --interval <MS>          Time in milliseconds between line generation [default: 250]
-    -o, --out-base-dir <FILE>    Output base directory
-    -p, --parallelism <COUNT>    Number of parallel generators [default: 2]
+    -i, --in-base-dir <FILE>          Input base directory
+    -t, --interval <MS>               Time in milliseconds between reads [default: 250]
+    -o, --out-base-dir <FILE>         Output base directory
+    -p, --parallelism <COUNT>         Number of parallel generators [default: 2]
+    -w, --wrap-strategy <STRATEGY>    What to do when sample log reaches the end [default: append]  [possible values: truncate, append, rotate]
 ```
 
 ## Example usage
